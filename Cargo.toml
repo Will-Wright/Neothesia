@@ -11,6 +11,7 @@ members = [
   "midi-file",
   "midi-io",
   "nuon",
+  "lightguide",
 ]
 
 default-members = ["neothesia"]
