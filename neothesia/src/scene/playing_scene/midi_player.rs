@@ -12,7 +12,7 @@ use std::{
 
 pub struct MidiPlayer {
     playback: midi_file::PlaybackState,
-    output: OutputConnection,
+    outputs: Vec<OutputConnection>,
     song: Song,
     play_along: PlayAlong,
     separate_channels: bool,
@@ -20,7 +20,7 @@ pub struct MidiPlayer {
 
 impl MidiPlayer {
     pub fn new(
-        output: OutputConnection,
+        outputs: Vec<OutputConnection>,
         song: Song,
         user_keyboard_range: piano_layout::KeyboardRange,
         separate_channels: bool,
@@ -30,7 +30,7 @@ impl MidiPlayer {
                 Duration::from_secs(3),
                 song.file.tracks.clone(),
             ),
-            output,
+            outputs,
             play_along: PlayAlong::new(user_keyboard_range),
             song,
             separate_channels,
@@ -66,15 +66,19 @@ impl MidiPlayer {
             };
             match config.player {
                 PlayerConfig::Auto => {
-                    self.output // TODO: Send to multiple outputs
-                        .midi_event(u4::new(channel), event.message);
+                    // Fan out to every registered output (audio synth, MIDI-out,
+                    // lightguide, …). Each connection consumes the event independently.
+                    for output in &self.outputs {
+                        output.midi_event(u4::new(channel), event.message);
+                    }
                 }
                 PlayerConfig::Human => {
                     // Let's play the sound, in case the user does not want it they can just set
                     // no-output output in settings
                     // TODO: Perhaps play on midi-in instead
-                    self.output
-                        .midi_event(u4::new(event.channel), event.message);
+                    for output in &self.outputs {
+                        output.midi_event(u4::new(event.channel), event.message);
+                    }
                     self.play_along
                         .midi_event(MidiEventSource::File, &event.message);
                 }
@@ -86,7 +90,9 @@ impl MidiPlayer {
     }
 
     fn clear(&mut self) {
-        self.output.stop_all();
+        for output in &self.outputs {
+            output.stop_all();
+        }
     }
 }
 
@@ -117,12 +123,12 @@ impl MidiPlayer {
 
     fn send_midi_programs_for_timestamp(&self, time: &Duration) {
         for (&channel, &p) in self.song.file.program_track.program_for_timestamp(time) {
-            self.output.midi_event(
-                u4::new(channel),
-                midi_file::midly::MidiMessage::ProgramChange {
-                    program: midi_file::midly::num::u7::new(p),
-                },
-            );
+            let msg = midi_file::midly::MidiMessage::ProgramChange {
+                program: midi_file::midly::num::u7::new(p),
+            };
+            for output in &self.outputs {
+                output.midi_event(u4::new(channel), msg);
+            }
         }
     }
 

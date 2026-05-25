@@ -93,7 +93,10 @@ impl PlayingScene {
         ));
 
         let player = MidiPlayer::new(
-            ctx.output_manager.connection().clone(),
+            // Phase 3b will source additional outputs (lightguide, etc.) here.
+            // For now this preserves single-output behavior with the existing
+            // primary OutputConnection from OutputManager.
+            vec![ctx.output_manager.connection().clone()],
             song,
             keyboard_layout.range.clone(),
             ctx.config.separate_channels(),
