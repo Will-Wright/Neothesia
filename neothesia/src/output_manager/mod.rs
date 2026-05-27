@@ -136,14 +136,26 @@ impl OutputManager {
 
         let lightguide_backend = LightguideBackend::new();
 
-        Self {
+        let mut manager = Self {
             #[cfg(feature = "synth")]
             synth_backend,
             midi_backend,
             lightguide_backend,
 
             output_connection: (OutputDescriptor::DummyOutput, OutputConnection::DummyOutput),
+        };
+
+        // Default primary output: prefer the built-in synth over silence.
+        // Upstream Neothesia starts in DummyOutput; users must hand-pick the
+        // synth in settings to hear audio. That's poor first-run UX —
+        // auto-connect now and let users override in settings if they want
+        // to route to external MIDI or mute.
+        #[cfg(feature = "synth")]
+        if manager.synth_backend.is_some() {
+            manager.connect(OutputDescriptor::Synth(None));
         }
+
+        manager
     }
 
     /// Open a Lightguide connection (KK MK2 USB HID) if a device is currently
