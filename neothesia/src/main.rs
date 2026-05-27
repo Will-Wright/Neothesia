@@ -359,6 +359,16 @@ fn main() {
     puffin::set_scopes_on(true); // tell puffin to collect data
     let _server = puffin_http::Server::new("127.0.0.1:8585").ok();
 
+    // Pre-initialize the lightguide HidApi handle BEFORE winit's event loop
+    // starts. On macOS, HidApi::new dispatches CFRunLoop notifications during
+    // device enumeration; if that fires inside winit's event handler the
+    // dispatch reenters winit and panics. Doing it here keeps enumeration in
+    // a clean non-reentrant context. Failure is non-fatal — the lightguide
+    // path just won't be available, lighting silently degrades.
+    if let Err(e) = lightguide::init_hidapi() {
+        log::warn!("lightguide: HidApi init failed at startup: {e:?}");
+    }
+
     let event_loop: EventLoop<NeothesiaEvent> = EventLoop::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 

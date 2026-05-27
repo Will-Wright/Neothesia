@@ -1641,6 +1641,7 @@ dependencies = [
  "env_logger",
  "fluidlite",
  "futures-channel",
+ "lightguide",
  "lilt",
  "log",
  "midi-file",

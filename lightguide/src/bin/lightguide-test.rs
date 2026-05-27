@@ -20,12 +20,20 @@ struct Args {
     #[arg(long, default_value = "kk-mk2")]
     driver: String,
 
-    /// Palette index to set on all keys (e.g. 0x19 = bright green per the
-    /// SynthesiaKontrol palette). Hex or decimal. Conflicts with --off.
+    /// Palette index to set (e.g. 0x19 = light green per the SynthesiaKontrol
+    /// palette). Hex or decimal. Conflicts with --off.
     #[arg(long, value_parser = parse_color_byte)]
     color: Option<u8>,
 
-    /// Turn all keys off (equivalent to --color 0). Conflicts with --color.
+    /// If set, light only the key at this buffer position. Without --key,
+    /// every key on the keyboard is lit with --color.
+    /// Buffer positions on S61 MK2: 0 = leftmost (C2), 60 = rightmost (C7),
+    /// middle C ≈ position 24. Out-of-range values are silently ignored.
+    #[arg(long, value_parser = parse_color_byte)]
+    key: Option<u8>,
+
+    /// Turn all keys off (equivalent to --color 0 without --key).
+    /// Conflicts with --color.
     #[arg(long, conflicts_with = "color")]
     off: bool,
 }
@@ -51,6 +59,12 @@ fn main() -> Result<()> {
     if args.off {
         driver.set_off()?;
         println!("all LEDs: off");
+    } else if let Some(key) = args.key {
+        // Start with a clean buffer so other keys are dark.
+        driver.set_off()?;
+        let color = args.color.unwrap_or(0x19);
+        driver.set_one(key, color)?;
+        println!("key {key}: palette 0x{color:02X} (other keys: off)");
     } else {
         let color = args.color.unwrap_or(0x19);
         driver.set_all(color)?;

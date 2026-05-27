@@ -92,11 +92,18 @@ impl PlayingScene {
             ctx.text_renderer_factory.new_renderer(),
         ));
 
+        // Primary output (user-configured: synth, midi-out, or dummy) goes
+        // first. If a Komplete Kontrol MK2 is detected at scene-start time,
+        // append a lightguide connection so the LEDs fire from the same event
+        // stream as the visual + audio. No UI for this yet — Phase 4.
+        let mut outputs = vec![ctx.output_manager.connection().clone()];
+        if let Some(lightguide) = ctx.output_manager.open_lightguide_connection() {
+            log::info!("playing-scene: attaching lightguide output");
+            outputs.push(lightguide);
+        }
+
         let player = MidiPlayer::new(
-            // Phase 3b will source additional outputs (lightguide, etc.) here.
-            // For now this preserves single-output behavior with the existing
-            // primary OutputConnection from OutputManager.
-            vec![ctx.output_manager.connection().clone()],
+            outputs,
             song,
             keyboard_layout.range.clone(),
             ctx.config.separate_channels(),

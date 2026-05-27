@@ -283,12 +283,31 @@ impl MenuScene {
     }
 }
 
+/// One-shot guard so the `NEOTHESIA_AUTOPLAY` env var triggers `state::play`
+/// at most once per process. Used for end-to-end integration testing of the
+/// lightguide pipeline without driving the menu UI manually.
+static AUTOPLAY_DISPATCHED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
 impl Scene for MenuScene {
     #[profiling::function]
     fn update(&mut self, ctx: &mut Context, delta: Duration) {
         self.quad_pipeline.clear();
         self.bg_pipeline.update_time(delta);
         self.state.tick(ctx);
+
+        // Auto-play hook for CC-driven E2E tests. When NEOTHESIA_AUTOPLAY is
+        // set in the environment AND a song has been loaded (typically via
+        // the CLI arg parsed by Song::from_env), dispatch the Play event on
+        // the first tick where the song is available. Idempotent across
+        // ticks via AUTOPLAY_DISPATCHED. Production use is unaffected.
+        if AUTOPLAY_DISPATCHED.get().is_none()
+            && std::env::var_os("NEOTHESIA_AUTOPLAY").is_some()
+            && self.state.song.is_some()
+        {
+            log::info!("NEOTHESIA_AUTOPLAY: dispatching Play on first menu tick");
+            let _ = AUTOPLAY_DISPATCHED.set(());
+            state::play(&self.state, ctx);
+        }
 
         self.futures
             .retain_mut(|f| match f.as_mut().poll(&mut self.context) {

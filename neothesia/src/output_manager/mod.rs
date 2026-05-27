@@ -7,6 +7,9 @@ mod synth_backend;
 #[cfg(feature = "synth")]
 use synth_backend::SynthBackend;
 
+pub mod lightguide_backend;
+use lightguide_backend::{LightguideBackend, LightguideOutputConnection};
+
 use std::{
     fmt::{self, Display, Formatter},
     path::PathBuf,
@@ -19,6 +22,10 @@ pub enum OutputDescriptor {
     #[cfg(feature = "synth")]
     Synth(Option<PathBuf>),
     MidiOut(MidiPortInfo),
+    /// Native Instruments Komplete Kontrol MK2 lightguide. Phase 3b: at most
+    /// one device, so the variant is unit-shaped. Phase 4 will add a
+    /// variant-info payload once multi-device detection lands.
+    Lightguide,
     DummyOutput,
 }
 
@@ -38,6 +45,10 @@ impl OutputDescriptor {
     pub fn is_synth(&self) -> bool {
         matches!(self, OutputDescriptor::Synth(_))
     }
+
+    pub fn is_lightguide(&self) -> bool {
+        matches!(self, OutputDescriptor::Lightguide)
+    }
 }
 
 impl Display for OutputDescriptor {
@@ -46,6 +57,7 @@ impl Display for OutputDescriptor {
             #[cfg(feature = "synth")]
             OutputDescriptor::Synth(_) => write!(f, "Buildin Synth"),
             OutputDescriptor::MidiOut(info) => write!(f, "{info}"),
+            OutputDescriptor::Lightguide => write!(f, "Lightguide (Komplete Kontrol)"),
             OutputDescriptor::DummyOutput => write!(f, "No Output"),
         }
     }
@@ -56,6 +68,7 @@ pub enum OutputConnection {
     Midi(midi_backend::MidiOutputConnection),
     #[cfg(feature = "synth")]
     Synth(synth_backend::SynthOutputConnection),
+    Lightguide(LightguideOutputConnection),
     DummyOutput,
 }
 
@@ -65,6 +78,7 @@ impl OutputConnection {
             OutputConnection::Midi(b) => b.midi_event(channel, msg),
             #[cfg(feature = "synth")]
             OutputConnection::Synth(b) => b.midi_event(channel, msg),
+            OutputConnection::Lightguide(b) => b.midi_event(channel, msg),
             OutputConnection::DummyOutput => {}
         }
     }
@@ -80,6 +94,7 @@ impl OutputConnection {
             OutputConnection::Midi(b) => b.stop_all(),
             #[cfg(feature = "synth")]
             OutputConnection::Synth(b) => b.stop_all(),
+            OutputConnection::Lightguide(b) => b.stop_all(),
             OutputConnection::DummyOutput => {}
         }
     }
@@ -89,6 +104,7 @@ pub struct OutputManager {
     #[cfg(feature = "synth")]
     synth_backend: Option<SynthBackend>,
     midi_backend: Option<MidiBackend>,
+    lightguide_backend: LightguideBackend,
 
     output_connection: (OutputDescriptor, OutputConnection),
 }
@@ -118,13 +134,23 @@ impl OutputManager {
             }
         };
 
+        let lightguide_backend = LightguideBackend::new();
+
         Self {
             #[cfg(feature = "synth")]
             synth_backend,
             midi_backend,
+            lightguide_backend,
 
             output_connection: (OutputDescriptor::DummyOutput, OutputConnection::DummyOutput),
         }
+    }
+
+    /// Open a Lightguide connection (KK MK2 USB HID) if a device is currently
+    /// detected. Used by `PlayingScene` to auto-attach lighting to the active
+    /// output Vec on top of the user-selected primary output.
+    pub fn open_lightguide_connection(&self) -> Option<OutputConnection> {
+        LightguideBackend::new_output_connection().map(OutputConnection::Lightguide)
     }
 
     pub fn outputs(&self) -> Vec<OutputDescriptor> {
@@ -137,6 +163,7 @@ impl OutputManager {
         if let Some(midi) = &self.midi_backend {
             outs.append(&mut midi.get_outputs());
         }
+        outs.append(&mut self.lightguide_backend.get_outputs());
 
         outs.push(OutputDescriptor::DummyOutput);
 
@@ -167,6 +194,11 @@ impl OutputManager {
                 OutputDescriptor::MidiOut(ref info) => {
                     if let Some(conn) = MidiBackend::new_output_connection(info) {
                         self.output_connection = (desc, OutputConnection::Midi(conn));
+                    }
+                }
+                OutputDescriptor::Lightguide => {
+                    if let Some(conn) = LightguideBackend::new_output_connection() {
+                        self.output_connection = (desc, OutputConnection::Lightguide(conn));
                     }
                 }
                 OutputDescriptor::DummyOutput => {
