@@ -70,18 +70,45 @@ impl UiState {
         self.inputs = ctx.input_manager.inputs();
 
         if self.selected_output.is_none() {
-            if let Some(name) = ctx.config.output() {
-                if let Some(out) = self
-                    .outputs
-                    .iter()
-                    .find(|output| output.to_string().as_str() == name)
-                {
+            // NEOTHESIA_OUTPUT=<substr> forces routing to a MIDI-out port whose
+            // display name contains the substring (e.g. "NeothesiaOut" matches
+            // "IAC Driver NeothesiaOut"). For external-rendering setups — e.g.
+            // piping MIDI to a REAPER session running Sforzando+Salamander —
+            // where macOS's broken settings.ron persistence on raw
+            // target/release binaries makes per-launch UI selection a
+            // non-starter. Mirrors the NEOTHESIA_AUTOPLAY / NEOTHESIA_HUMAN_TRACKS
+            // env-var hooks. Sets the menu's selected_output so play() routes
+            // via the matched port instead of the default Synth.
+            if let Some(filter) = std::env::var_os("NEOTHESIA_OUTPUT") {
+                let filter = filter.to_string_lossy().into_owned();
+                let matched = self.outputs.iter().find(|o| match o {
+                    OutputDescriptor::MidiOut(info) => info.to_string().contains(&filter),
+                    _ => false,
+                });
+                if let Some(out) = matched {
+                    log::info!("NEOTHESIA_OUTPUT: selecting MIDI output matching {filter:?}");
                     self.selected_output = Some(out.clone());
                 } else {
-                    self.selected_output = self.outputs.first().cloned();
+                    log::warn!(
+                        "NEOTHESIA_OUTPUT={filter:?} set but no matching MIDI output found; using default"
+                    );
                 }
-            } else {
-                self.selected_output = Some(OutputDescriptor::DummyOutput);
+            }
+
+            if self.selected_output.is_none() {
+                if let Some(name) = ctx.config.output() {
+                    if let Some(out) = self
+                        .outputs
+                        .iter()
+                        .find(|output| output.to_string().as_str() == name)
+                    {
+                        self.selected_output = Some(out.clone());
+                    } else {
+                        self.selected_output = self.outputs.first().cloned();
+                    }
+                } else {
+                    self.selected_output = Some(OutputDescriptor::DummyOutput);
+                }
             }
         }
 
