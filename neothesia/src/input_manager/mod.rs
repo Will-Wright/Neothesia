@@ -25,6 +25,7 @@ impl InputManager {
 
     pub fn connect_input(&mut self, port: midi_io::MidiInputPort) {
         let tx = self.tx.clone();
+        log::info!("input_manager: connecting MIDI input port {port}");
 
         // Close the connection first, as Windows does not like it when we hold 2 connections
         self.current_connection = None;

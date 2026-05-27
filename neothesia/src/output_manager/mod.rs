@@ -73,6 +73,14 @@ pub enum OutputConnection {
 }
 
 impl OutputConnection {
+    /// True if this connection is a lightguide (LED) output rather than an
+    /// audio-producing output. Used by `MidiPlayer` to route file-played
+    /// notes for `PlayerConfig::Human` tracks to lights only — letting the
+    /// user produce the audio themselves via their MIDI controller.
+    pub fn is_lightguide(&self) -> bool {
+        matches!(self, OutputConnection::Lightguide(_))
+    }
+
     pub fn midi_event(&self, channel: u4, msg: MidiMessage) {
         match self {
             OutputConnection::Midi(b) => b.midi_event(channel, msg),

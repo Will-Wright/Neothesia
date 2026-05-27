@@ -25,8 +25,15 @@ impl SynthBackend {
             .default_output_device()
             .ok_or("failed to find a default output device")?;
 
+        let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
         let config = device.default_output_config()?;
         let sample_format = config.sample_format();
+        let sample_rate = config.sample_rate();
+        let channels = config.channels();
+
+        log::info!(
+            "synth_backend: cpal device={device_name:?} format={sample_format:?} sample_rate={sample_rate} channels={channels}"
+        );
 
         let stream_config: cpal::StreamConfig = config.into();
 
@@ -218,9 +225,11 @@ fn oxisynth_adapter<'a>(
     });
 
     {
+        log::info!("synth_backend: loading soundfont from {}", path.display());
         let mut file = std::fs::File::open(path).unwrap();
         let font = oxisynth::SoundFont::load(&mut file).unwrap();
         synth.add_font(font, true);
+        log::info!("synth_backend: soundfont loaded, synth ready");
     }
 
     move || {

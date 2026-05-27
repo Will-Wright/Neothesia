@@ -23,13 +23,22 @@ pub struct SongConfig {
 
 impl SongConfig {
     fn new(tracks: &[MidiTrack]) -> Self {
+        // NEOTHESIA_HUMAN_TRACKS=1 → default every non-drum track to Human.
+        // Practice mode: file's notes drive lights + on-screen visual, the
+        // user plays the audio on their MIDI controller.
+        let force_human = std::env::var_os("NEOTHESIA_HUMAN_TRACKS").is_some();
         let tracks: Vec<_> = tracks
             .iter()
             .map(|t| {
                 let is_drums = t.has_drums && !t.has_other_than_drums;
+                let player = if force_human && !is_drums {
+                    PlayerConfig::Human
+                } else {
+                    PlayerConfig::Auto
+                };
                 TrackConfig {
                     track_id: t.track_id,
-                    player: PlayerConfig::Auto,
+                    player,
                     visible: !is_drums,
                 }
             })

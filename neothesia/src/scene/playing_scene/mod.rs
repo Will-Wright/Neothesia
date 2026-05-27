@@ -311,11 +311,24 @@ impl Scene for PlayingScene {
         super::handle_nuon_window_event(&mut self.nuon, event, ctx);
     }
 
-    fn midi_event(&mut self, _ctx: &mut Context, _channel: u8, message: &MidiMessage) {
+    fn midi_event(&mut self, ctx: &mut Context, _channel: u8, message: &MidiMessage) {
         self.player
             .play_along_mut()
             .midi_event(midi_player::MidiEventSource::User, message);
         self.keyboard.user_midi_event(message);
+        // Route user's MIDI input to the primary audio output (synth /
+        // external MIDI-out). Mirrors FreeplayScene's pattern. Without
+        // this, user keypresses are silent when tracks are set to Human —
+        // breaking the core "practice mode" loop where the user produces
+        // the audio.
+        //
+        // Lightguide is NOT routed here; the lightguide is driven by the
+        // file's expected notes (in MidiPlayer::update), so the lights
+        // continue to show what to play next regardless of what the user
+        // hits.
+        ctx.output_manager
+            .connection()
+            .midi_event(0.into(), *message);
     }
 }
 

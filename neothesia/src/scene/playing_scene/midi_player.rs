@@ -73,11 +73,19 @@ impl MidiPlayer {
                     }
                 }
                 PlayerConfig::Human => {
-                    // Let's play the sound, in case the user does not want it they can just set
-                    // no-output output in settings
-                    // TODO: Perhaps play on midi-in instead
+                    // Practice mode: the user plays this track. The file's
+                    // events drive the lightguide (lights show the user what
+                    // to play) and the on-screen visual, but the file does
+                    // NOT route to audio outputs. The user produces audio by
+                    // hitting keys on their MIDI controller — the scene's
+                    // midi_event handler routes that input to the audio out.
+                    //
+                    // This addresses the upstream `// TODO: Perhaps play on
+                    // midi-in instead` comment that was here.
                     for output in &self.outputs {
-                        output.midi_event(u4::new(event.channel), event.message);
+                        if output.is_lightguide() {
+                            output.midi_event(u4::new(event.channel), event.message);
+                        }
                     }
                     self.play_along
                         .midi_event(MidiEventSource::File, &event.message);
