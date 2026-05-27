@@ -77,8 +77,18 @@ impl UiState {
             // where macOS's broken settings.ron persistence on raw
             // target/release binaries makes per-launch UI selection a
             // non-starter. Mirrors the NEOTHESIA_AUTOPLAY / NEOTHESIA_HUMAN_TRACKS
-            // env-var hooks. Sets the menu's selected_output so play() routes
-            // via the matched port instead of the default Synth.
+            // env-var hooks.
+            //
+            // Why this hook lives in `UiState::tick()` and not in
+            // `OutputManager::new()`: a copy placed in OutputManager::new()
+            // gets clobbered ~50ms later when this tick() runs and walks the
+            // `selected_output.is_none()` → `config.output()` fallback chain.
+            // `default_output()` returns `Some("Buildin Synth")`, so the menu
+            // resolves selected_output = Synth, then `NEOTHESIA_AUTOPLAY` →
+            // `play()` → `connect_io()` → `output_manager.connect(Synth)`
+            // overrides any prior MIDI-out pick. Setting `selected_output`
+            // here, *before* the config-based fallback, is what makes the
+            // env var actually win at play time.
             if let Some(filter) = std::env::var_os("NEOTHESIA_OUTPUT") {
                 let filter = filter.to_string_lossy().into_owned();
                 let matched = self.outputs.iter().find(|o| match o {
