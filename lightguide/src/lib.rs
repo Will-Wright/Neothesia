@@ -29,6 +29,7 @@ use anyhow::{Context, Result};
 use hidapi::HidApi;
 
 pub mod drivers;
+pub mod hotplug;
 
 /// Process-global lightguide runtime state. Holds the `HidApi` handle plus
 /// per-driver device paths cached at enumeration time. Subsequent device
