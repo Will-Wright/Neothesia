@@ -46,7 +46,36 @@ pub fn default_sf2() -> Option<PathBuf> {
     return Some(PathBuf::from("./default.sf2"));
 
     #[cfg(target_os = "macos")]
-    return bundled_resource_path("default", "sf2").map(PathBuf::from);
+    {
+        // First: try the .app bundle Resources dir (proper macOS install).
+        if let Some(p) = bundled_resource_path("default", "sf2").map(PathBuf::from)
+            && p.exists()
+        {
+            return Some(p);
+        }
+
+        // Fallback for raw target/release/neothesia (cargo build, no .app):
+        //   target/release/neothesia → target/release → target → <repo root>
+        // The repo ships default.sf2 at the root. Same convention as Windows.
+        if let Some(p) = std::env::current_exe().ok().and_then(|exe| {
+            exe.parent()                  // target/release/
+                .and_then(|p| p.parent()) // target/
+                .and_then(|p| p.parent()) // <repo root>
+                .map(|p| p.join("default.sf2"))
+        }) && p.exists()
+        {
+            return Some(p);
+        }
+
+        // Last resort: ~/.config/neothesia/default.sf2 (user-staged).
+        if let Some(p) = xdg_config().map(|p| p.join("default.sf2"))
+            && p.exists()
+        {
+            return Some(p);
+        }
+
+        None
+    }
 }
 
 pub fn settings_ron() -> Option<PathBuf> {
