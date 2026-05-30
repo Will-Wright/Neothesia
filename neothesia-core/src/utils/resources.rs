@@ -14,6 +14,15 @@ fn xdg_config() -> Option<PathBuf> {
         .or_else(|| home().map(|h| h.join(".config").join("neothesia")))
 }
 
+#[cfg(target_os = "macos")]
+fn macos_config() -> Option<PathBuf> {
+    home().map(|h| {
+        h.join("Library")
+            .join("Application Support")
+            .join("neothesia")
+    })
+}
+
 pub fn default_sf2() -> Option<PathBuf> {
     #[cfg(all(target_family = "unix", not(target_os = "macos")))]
     {
@@ -58,7 +67,7 @@ pub fn default_sf2() -> Option<PathBuf> {
         //   target/release/neothesia → target/release → target → <repo root>
         // The repo ships default.sf2 at the root. Same convention as Windows.
         if let Some(p) = std::env::current_exe().ok().and_then(|exe| {
-            exe.parent()                  // target/release/
+            exe.parent() // target/release/
                 .and_then(|p| p.parent()) // target/
                 .and_then(|p| p.parent()) // <repo root>
                 .map(|p| p.join("default.sf2"))
@@ -86,7 +95,7 @@ pub fn settings_ron() -> Option<PathBuf> {
     return Some(PathBuf::from("./settings.ron"));
 
     #[cfg(target_os = "macos")]
-    return bundled_resource_path("settings", "ron").map(PathBuf::from);
+    return macos_config().map(|p| p.join("settings.ron"));
 }
 
 #[cfg(target_os = "macos")]
@@ -124,5 +133,16 @@ fn bundled_resource_path(name: &str, extension: &str) -> Option<String> {
             return Some(rstr);
         }
         None
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::settings_ron;
+
+    #[test]
+    fn macos_settings_use_user_application_support() {
+        let path = settings_ron().expect("settings path");
+        assert!(path.ends_with("Library/Application Support/neothesia/settings.ron"));
     }
 }
