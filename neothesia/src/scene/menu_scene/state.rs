@@ -70,14 +70,11 @@ impl UiState {
         self.inputs = ctx.input_manager.inputs();
 
         if self.selected_output.is_none() {
+            // NEOTHESIA_OUTPUT=dummy/no-output/off forces silent primary output.
             // NEOTHESIA_OUTPUT=<substr> forces routing to a MIDI-out port whose
             // display name contains the substring (e.g. "NeothesiaOut" matches
-            // "IAC Driver NeothesiaOut"). For external-rendering setups — e.g.
-            // piping MIDI to a REAPER session running Sforzando+Salamander —
-            // where macOS's broken settings.ron persistence on raw
-            // target/release binaries makes per-launch UI selection a
-            // non-starter. Mirrors the NEOTHESIA_AUTOPLAY / NEOTHESIA_HUMAN_TRACKS
-            // env-var hooks.
+            // "IAC Driver NeothesiaOut"). This keeps practice workflows
+            // launchable without relying on UI settings persistence.
             //
             // Why this hook lives in `UiState::tick()` and not in
             // `OutputManager::new()`: a copy placed in OutputManager::new()
@@ -91,17 +88,22 @@ impl UiState {
             // env var actually win at play time.
             if let Some(filter) = std::env::var_os("NEOTHESIA_OUTPUT") {
                 let filter = filter.to_string_lossy().into_owned();
-                let matched = self.outputs.iter().find(|o| match o {
-                    OutputDescriptor::MidiOut(info) => info.to_string().contains(&filter),
-                    _ => false,
-                });
-                if let Some(out) = matched {
-                    log::info!("NEOTHESIA_OUTPUT: selecting MIDI output matching {filter:?}");
-                    self.selected_output = Some(out.clone());
+                if env_output_requests_dummy(&filter) {
+                    log::info!("NEOTHESIA_OUTPUT={filter:?}: selecting dummy output");
+                    self.selected_output = Some(OutputDescriptor::DummyOutput);
                 } else {
-                    log::warn!(
-                        "NEOTHESIA_OUTPUT={filter:?} set but no matching MIDI output found; using default"
-                    );
+                    let matched = self.outputs.iter().find(|o| match o {
+                        OutputDescriptor::MidiOut(info) => info.to_string().contains(&filter),
+                        _ => false,
+                    });
+                    if let Some(out) = matched {
+                        log::info!("NEOTHESIA_OUTPUT: selecting MIDI output matching {filter:?}");
+                        self.selected_output = Some(out.clone());
+                    } else {
+                        log::warn!(
+                            "NEOTHESIA_OUTPUT={filter:?} set but no matching MIDI output found; using default"
+                        );
+                    }
                 }
             }
 
@@ -134,6 +136,13 @@ impl UiState {
             }
         }
     }
+}
+
+fn env_output_requests_dummy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "dummy" | "none" | "off" | "no output" | "no-output" | "silent"
+    )
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -183,4 +192,18 @@ pub fn freeplay(data: &UiState, ctx: &mut Context) {
     ctx.proxy
         .send_event(NeothesiaEvent::FreePlay(data.song.clone()))
         .ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env_output_requests_dummy;
+
+    #[test]
+    fn neothesia_output_dummy_aliases_request_silent_primary_output() {
+        for value in ["dummy", "none", "off", "no output", "no-output", "silent"] {
+            assert!(env_output_requests_dummy(value), "{value}");
+            assert!(env_output_requests_dummy(&value.to_ascii_uppercase()), "{value}");
+        }
+        assert!(!env_output_requests_dummy("NeothesiaOut"));
+    }
 }
