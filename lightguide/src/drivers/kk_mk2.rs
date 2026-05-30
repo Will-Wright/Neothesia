@@ -84,7 +84,7 @@ impl KkMk2 {
     /// reentrant-panic from inside winit's event handler).
     pub fn open() -> Result<Self> {
         let path = crate::kk_mk2_path().context("lightguide KK MK2 path lookup")?;
-        let device = crate::with_hidapi(|api| api.open_path(path))?
+        let device = crate::with_hidapi(|api| api.open_path(&path))?
             .context("HidApi::open_path on cached KK MK2 path failed")?;
         log::info!("opened Komplete Kontrol MK2 via cached device path");
         Ok(Self {

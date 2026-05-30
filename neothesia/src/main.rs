@@ -368,6 +368,7 @@ fn main() {
     if let Err(e) = lightguide::init_hidapi() {
         log::warn!("lightguide: HidApi init failed at startup: {e:?}");
     }
+    lightguide::start_hotplug_watcher();
 
     let event_loop: EventLoop<NeothesiaEvent> = EventLoop::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();

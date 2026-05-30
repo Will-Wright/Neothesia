@@ -73,7 +73,7 @@ fn midi_note_to_key(note: u8) -> Option<u8> {
 }
 
 struct LightguideOutputConnectionInner {
-    driver: Box<dyn Driver>,
+    driver: Option<Box<dyn Driver>>,
     /// All (channel, midi_note) pairs currently lit. Used to bound `stop_all`
     /// behavior and to reason about Drop ordering.
     active_notes: HashSet<(u8, u8)>,
@@ -88,7 +88,7 @@ impl LightguideOutputConnection {
     pub fn new(driver: Box<dyn Driver>) -> Self {
         Self {
             inner: Rc::new(RefCell::new(LightguideOutputConnectionInner {
-                driver,
+                driver: Some(driver),
                 active_notes: Default::default(),
             })),
         }
@@ -103,9 +103,8 @@ impl LightguideOutputConnection {
                 let note = key.as_int();
                 let Some(buf_key) = midi_note_to_key(note) else { return };
                 let color = palette_for_track(ch);
-                if let Err(e) = inner.driver.set_one(buf_key, color) {
+                if let Err(e) = inner.set_one_with_reconnect(buf_key, color) {
                     log::warn!("lightguide: set_one note-on failed: {e:?}");
-                    return;
                 }
                 inner.active_notes.insert((ch, note));
             }
@@ -113,9 +112,8 @@ impl LightguideOutputConnection {
             MidiMessage::NoteOn { key, .. } | MidiMessage::NoteOff { key, .. } => {
                 let note = key.as_int();
                 let Some(buf_key) = midi_note_to_key(note) else { return };
-                if let Err(e) = inner.driver.set_one(buf_key, palette::OFF) {
+                if let Err(e) = inner.set_one_with_reconnect(buf_key, palette::OFF) {
                     log::warn!("lightguide: set_one note-off failed: {e:?}");
-                    return;
                 }
                 inner.active_notes.remove(&(ch, note));
             }
@@ -128,10 +126,60 @@ impl LightguideOutputConnection {
         let inner = &mut *self.inner.borrow_mut();
         // Single full-clear is cheaper and more resilient than per-note
         // off-events. Also handles the case where the file dropped NoteOffs.
-        if let Err(e) = inner.driver.set_off() {
+        if let Some(driver) = inner.driver.as_mut()
+            && let Err(e) = driver.set_off()
+        {
             log::warn!("lightguide: set_off on stop_all failed: {e:?}");
         }
         inner.active_notes.clear();
+    }
+}
+
+impl LightguideOutputConnectionInner {
+    fn set_one_with_reconnect(&mut self, key: u8, color: u8) -> Result<(), String> {
+        let Some(driver) = self.driver.as_mut() else {
+            self.reconnect_driver()?;
+            return self.set_one_current_driver(key, color);
+        };
+
+        match driver.set_one(key, color) {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                log::warn!("lightguide: write failed; attempting KK MK2 reconnect: {err:?}");
+                self.driver = None;
+                self.reconnect_driver()?;
+                self.restore_active_notes()?;
+                self.set_one_current_driver(key, color)
+            }
+        }
+    }
+
+    fn set_one_current_driver(&mut self, key: u8, color: u8) -> Result<(), String> {
+        let driver = self
+            .driver
+            .as_mut()
+            .ok_or_else(|| "lightguide driver unavailable after reconnect".to_string())?;
+        driver.set_one(key, color).map_err(|e| format!("{e:?}"))
+    }
+
+    fn reconnect_driver(&mut self) -> Result<(), String> {
+        let mut driver = KkMk2::open().map_err(|e| format!("{e:?}"))?;
+        driver.init().map_err(|e| format!("{e:?}"))?;
+        log::info!("lightguide: KK MK2 reconnected");
+        self.driver = Some(Box::new(driver));
+        Ok(())
+    }
+
+    fn restore_active_notes(&mut self) -> Result<(), String> {
+        let notes: Vec<(u8, u8)> = self.active_notes.iter().copied().collect();
+        for (ch, note) in notes {
+            let Some(buf_key) = midi_note_to_key(note) else {
+                continue;
+            };
+            let color = palette_for_track(ch);
+            self.set_one_current_driver(buf_key, color)?;
+        }
+        Ok(())
     }
 }
 

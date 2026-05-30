@@ -40,7 +40,7 @@ struct LightguideRuntime {
     api: Mutex<HidApi>,
     /// Path of the first detected Komplete Kontrol S25/S49/S61/S88 MK2
     /// device, if any. None if the device was unplugged at init time.
-    kk_mk2_path: Option<CString>,
+    kk_mk2_path: Mutex<Option<CString>>,
 }
 
 static RUNTIME: OnceLock<LightguideRuntime> = OnceLock::new();
@@ -83,7 +83,7 @@ pub(crate) fn ensure_runtime() -> Result<&'static LightguideRuntime> {
 
     let runtime = LightguideRuntime {
         api: Mutex::new(api),
-        kk_mk2_path,
+        kk_mk2_path: Mutex::new(kk_mk2_path),
     };
 
     // Racing setters both end up with equivalent runtimes; losing handle drops.
@@ -91,13 +91,38 @@ pub(crate) fn ensure_runtime() -> Result<&'static LightguideRuntime> {
     Ok(RUNTIME.get().expect("RUNTIME set but get returned None"))
 }
 
-pub(crate) fn kk_mk2_path() -> Result<&'static CString> {
+pub(crate) fn kk_mk2_path() -> Result<CString> {
     let rt = ensure_runtime()?;
     rt.kk_mk2_path
-        .as_ref()
+        .lock()
+        .expect("lightguide KK MK2 path mutex poisoned")
+        .clone()
         .ok_or_else(|| anyhow::anyhow!(
             "no Komplete Kontrol MK2 device cached — was the keyboard plugged in at app startup?"
         ))
+}
+
+pub fn update_kk_mk2_path(path: Option<CString>) -> Result<()> {
+    let rt = ensure_runtime()?;
+    *rt.kk_mk2_path
+        .lock()
+        .expect("lightguide KK MK2 path mutex poisoned") = path;
+    Ok(())
+}
+
+pub fn start_hotplug_watcher() {
+    hotplug::start_watcher(|event| match event {
+        hotplug::HotplugEvent::KkMk2Connected { path } => {
+            if let Err(e) = update_kk_mk2_path(Some(path)) {
+                log::warn!("lightguide hotplug: failed to update cached KK MK2 path: {e:?}");
+            }
+        }
+        hotplug::HotplugEvent::KkMk2Disconnected => {
+            if let Err(e) = update_kk_mk2_path(None) {
+                log::warn!("lightguide hotplug: failed to clear cached KK MK2 path: {e:?}");
+            }
+        }
+    });
 }
 
 pub(crate) fn with_hidapi<R>(f: impl FnOnce(&HidApi) -> R) -> Result<R> {
